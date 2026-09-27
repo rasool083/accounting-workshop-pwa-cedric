@@ -7,7 +7,8 @@ import { isBackupFilename } from "./googleDrive";
  * approves once and the app refreshes short-lived access tokens itself.
  * No client secret exists in this code (PKCE does not need one).
  * The Dropbox app must use "App folder" access; every backup lives in
- * /Apps/<app name>/ in the user's Dropbox.
+ * /Apps/<app name>/backups/<year>/<MM-month>/ in the user's Dropbox (r6.2),
+ * using the Solar Hijri date. Older backups in the app folder root still list.
  */
 const PREFIX = "accounting-workshop-pwa-cedric";
 const APP_KEY_KEY = `${PREFIX}:dropbox-app-key`;
@@ -19,6 +20,35 @@ export const DEFAULT_DROPBOX_APP_KEY = "";
 
 /** Permissions the Dropbox app must have enabled (App Console > Permissions), requested explicitly at sign-in. */
 export const DROPBOX_SCOPES = "account_info.read files.metadata.read files.content.read files.content.write";
+
+/** Top folder inside the app folder that holds every backup (r6.2). */
+export const DROPBOX_BACKUP_ROOT = "/backups";
+const PERSIAN_MONTHS = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
+
+/** Solar Hijri year and month of a moment, in Tehran time. */
+export function persianYearMonth(date: Date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US-u-ca-persian-nu-latn", {
+    timeZone: "Asia/Tehran",
+    year: "numeric",
+    month: "numeric",
+  }).formatToParts(date);
+  const year = Number(parts.find(part => part.type === "year")?.value);
+  const month = Number(parts.find(part => part.type === "month")?.value);
+  return { year, month };
+}
+
+/** Folder of a backup: /backups/<year>/<MM-month name>, from the Persian date in its file name, else today in Tehran. */
+export function dropboxBackupFolder(filename: string, now: Date = new Date()) {
+  const match = filename.match(/(1[34]\d{2})-(\d{2})-\d{2}/);
+  const fromName = match && Number(match[2]) >= 1 && Number(match[2]) <= 12;
+  const { year, month } = fromName ? { year: Number(match[1]), month: Number(match[2]) } : persianYearMonth(now);
+  return `${DROPBOX_BACKUP_ROOT}/${year}/${String(month).padStart(2, "0")}-${PERSIAN_MONTHS[month - 1]}`;
+}
+
+/** Dropbox-API-Arg is an HTTP header, so non-ASCII characters (Persian folder names) must be \\u-escaped. */
+export function dropboxApiArg(value: unknown) {
+  return JSON.stringify(value).replace(/[\u007f-\uffff]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
 
 type StoredAuth = { refreshToken: string; accountId?: string };
 let memoryToken: { value: string; expiresAt: number } | null = null;
@@ -207,7 +237,7 @@ export async function listDropboxBackups() {
   let response = await fetch("https://api.dropboxapi.com/2/files/list_folder", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ path: "", limit: 2000 }),
+    body: JSON.stringify({ path: "", recursive: true, limit: 2000 }),
   });
   for (;;) {
     if (!response.ok) throw await apiError(response, "خواندن فهرست Dropbox ناموفق بود");
@@ -231,7 +261,12 @@ export async function uploadDropboxBackup(filename: string, payload: string) {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/octet-stream",
-      "Dropbox-API-Arg": JSON.stringify({ path: `/${filename}`, mode: "add", autorename: false, mute: true }),
+      "Dropbox-API-Arg": dropboxApiArg({
+        path: `${dropboxBackupFolder(filename)}/${filename}`,
+        mode: "add",
+        autorename: false,
+        mute: true,
+      }),
     },
     body: new Blob([payload], { type: "application/json" }),
   });
@@ -243,7 +278,7 @@ export async function downloadDropboxBackup(path: string) {
   const token = await accessToken();
   const response = await fetch("https://content.dropboxapi.com/2/files/download", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Dropbox-API-Arg": JSON.stringify({ path }) },
+    headers: { Authorization: `Bearer ${token}`, "Dropbox-API-Arg": dropboxApiArg({ path }) },
   });
   if (!response.ok) throw await apiError(response, "دریافت فایل از Dropbox ناموفق بود");
   return response.text();

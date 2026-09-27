@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { codeChallengeFor, createCodeVerifier, dropboxEntriesToBackups, dropboxErrorMessage, dropboxRedirectUri } from "./dropbox";
+import {
+  codeChallengeFor,
+  createCodeVerifier,
+  dropboxApiArg,
+  dropboxBackupFolder,
+  dropboxEntriesToBackups,
+  dropboxErrorMessage,
+  dropboxRedirectUri,
+  persianYearMonth,
+} from "./dropbox";
 
 describe("Dropbox backup (CEDRIC r6)", () => {
   it("builds the PKCE S256 challenge (SHA-256, base64url, no padding)", async () => {
@@ -36,5 +45,35 @@ describe("Dropbox backup (CEDRIC r6)", () => {
     expect(dropboxErrorMessage(401, '{"error_summary": "expired_access_token/"}', "x")).toContain("منقضی");
     expect(dropboxErrorMessage(409, '{"error_summary": "path/not_found/"}', "x")).toBe("فایل در Dropbox پیدا نشد");
     expect(dropboxErrorMessage(500, "", "خطا")).toBe("خطا (کد 500)");
+  });
+
+  it("stores each backup in /backups/<year>/<MM-month> by its Persian date (r6.2)", () => {
+    expect(dropboxBackupFolder("cedric-backup-1405-07-05-002.json")).toBe("/backups/1405/07-مهر");
+    expect(dropboxBackupFolder("cedric-backup-1405-12-29-014.json")).toBe("/backups/1405/12-اسفند");
+    expect(dropboxBackupFolder("cedric-backup-1406-01-01-001.json")).toBe("/backups/1406/01-فروردین");
+    expect(dropboxBackupFolder("cedric-backup.json", new Date("2026-09-27T12:00:00Z"))).toBe("/backups/1405/07-مهر");
+  });
+
+  it("switches month at Nowruz 1406 in Tehran time", () => {
+    expect(persianYearMonth(new Date("2027-03-20T20:00:00Z"))).toEqual({ year: 1405, month: 12 });
+    expect(persianYearMonth(new Date("2027-03-20T21:00:00Z"))).toEqual({ year: 1406, month: 1 });
+  });
+
+  it("sends Persian paths as an ASCII-only Dropbox-API-Arg header", () => {
+    const arg = dropboxApiArg({ path: "/backups/1405/07-مهر/cedric-backup-1405-07-05-002.json" });
+    expect(arg).toMatch(/^[\x20-\x7e]+$/);
+    expect(JSON.parse(arg).path).toBe("/backups/1405/07-مهر/cedric-backup-1405-07-05-002.json");
+  });
+
+  it("lists backups from month folders and the old root together", () => {
+    const list = dropboxEntriesToBackups([
+      { ".tag": "folder", id: "1", name: "07-مهر", path_lower: "/backups/1405/07-مهر" },
+      { ".tag": "file", id: "2", name: "cedric-backup-1405-07-05-002.json", path_lower: "/backups/1405/07-مهر/cedric-backup-1405-07-05-002.json", server_modified: "2026-09-27T10:00:00Z" },
+      { ".tag": "file", id: "3", name: "cedric-backup-1405-07-05-001.json", path_lower: "/cedric-backup-1405-07-05-001.json", server_modified: "2026-09-27T09:00:00Z" },
+    ]);
+    expect(list.map(file => file.id)).toEqual([
+      "/backups/1405/07-مهر/cedric-backup-1405-07-05-002.json",
+      "/cedric-backup-1405-07-05-001.json",
+    ]);
   });
 });
