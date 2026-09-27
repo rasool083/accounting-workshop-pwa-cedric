@@ -17,6 +17,9 @@ const VERIFIER_KEY = `${PREFIX}:dropbox-pkce-verifier`;
 /** Public app key of the project's Dropbox app (not a secret). Empty until created. */
 export const DEFAULT_DROPBOX_APP_KEY = "";
 
+/** Permissions the Dropbox app must have enabled (App Console > Permissions), requested explicitly at sign-in. */
+export const DROPBOX_SCOPES = "account_info.read files.metadata.read files.content.read files.content.write";
+
 type StoredAuth = { refreshToken: string; accountId?: string };
 let memoryToken: { value: string; expiresAt: number } | null = null;
 
@@ -81,6 +84,7 @@ export async function startDropboxAuth(appKey: string) {
     code_challenge: await codeChallengeFor(verifier),
     code_challenge_method: "S256",
     token_access_type: "offline",
+    scope: DROPBOX_SCOPES,
     redirect_uri: currentRedirectUri(),
   });
   window.location.assign(`https://www.dropbox.com/oauth2/authorize?${params}`);
@@ -181,11 +185,20 @@ export function dropboxEntriesToBackups(entries: DropboxEntry[]): DriveBackupFil
     .sort((a, b) => (b.modifiedTime || "").localeCompare(a.modifiedTime || ""));
 }
 
+/** Turns a Dropbox API failure into a message the owner can act on. */
+export function dropboxErrorMessage(status: number, text: string, fallback: string) {
+  if (/missing_scope|required scope/i.test(text))
+    return "برنامهٔ Dropbox دسترسی لازم را ندارد. در Dropbox App Console، تب Permissions، گزینه‌های files.metadata.read و files.content.read و files.content.write را تیک بزنید و Submit کنید؛ سپس اینجا «قطع اتصال» و دوباره «اتصال به Dropbox» را بزنید.";
+  if (status === 409 && text.includes("not_found")) return "فایل در Dropbox پیدا نشد";
+  if (status === 401) return "مجوز Dropbox منقضی یا لغو شده؛ «قطع اتصال» و دوباره «اتصال به Dropbox» را بزنید";
+  if (status === 429) return "Dropbox موقتاً درخواست‌ها را محدود کرده؛ چند دقیقه بعد دوباره امتحان کنید";
+  const detail = text.replace(/\s+/g, " ").trim().slice(0, 160);
+  return `${fallback} (کد ${status}${detail ? `: ${detail}` : ""})`;
+}
+
 async function apiError(response: Response, fallback: string) {
   const text = await response.text().catch(() => "");
-  if (response.status === 409 && text.includes("not_found")) return new Error("فایل در Dropbox پیدا نشد");
-  if (response.status === 401) return new Error("مجوز Dropbox منقضی یا لغو شده؛ دوباره اتصال را بزنید");
-  return new Error(fallback);
+  return new Error(dropboxErrorMessage(response.status, text, fallback));
 }
 
 export async function listDropboxBackups() {

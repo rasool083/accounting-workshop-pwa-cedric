@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeChallengeFor, createCodeVerifier, dropboxEntriesToBackups, dropboxRedirectUri } from "./dropbox";
+import { codeChallengeFor, createCodeVerifier, dropboxEntriesToBackups, dropboxErrorMessage, dropboxRedirectUri } from "./dropbox";
 
 describe("Dropbox backup (CEDRIC r6)", () => {
   it("builds the PKCE S256 challenge (SHA-256, base64url, no padding)", async () => {
@@ -26,5 +26,15 @@ describe("Dropbox backup (CEDRIC r6)", () => {
     ]);
     expect(list.map(file => file.name)).toEqual(["cedric-backup-1405-07-05-002.json", "backup-1405-07-01-001.json"]);
     expect(list[0]).toMatchObject({ id: "/cedric-backup-1405-07-05-002.json", size: "20" });
+  });
+
+  it("explains Dropbox API failures instead of a generic message (r6.1)", () => {
+    const scope = dropboxErrorMessage(400, "Error in call to API function \"files/list_folder\": Your app is not permitted to access this endpoint because it does not have the required scope 'files.metadata.read'.", "x");
+    expect(scope).toContain("Permissions");
+    expect(scope).toContain("files.metadata.read");
+    expect(dropboxErrorMessage(401, '{"error_summary": "missing_scope/.."}', "x")).toContain("Permissions");
+    expect(dropboxErrorMessage(401, '{"error_summary": "expired_access_token/"}', "x")).toContain("منقضی");
+    expect(dropboxErrorMessage(409, '{"error_summary": "path/not_found/"}', "x")).toBe("فایل در Dropbox پیدا نشد");
+    expect(dropboxErrorMessage(500, "", "خطا")).toBe("خطا (کد 500)");
   });
 });
