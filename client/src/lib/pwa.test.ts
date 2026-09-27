@@ -35,7 +35,10 @@ describe("PWA delivery contract", () => {
 
   it("keeps the service worker cache versioned and limited to same-origin app assets", () => {
     const serviceWorker = readFileSync(serviceWorkerPath, "utf8");
-    expect(serviceWorker).toMatch(/CACHE_NAME\s*=\s*["']accounting-workshop-pwa-v\d+["']/);
+    expect(serviceWorker).toMatch(/CACHE_PREFIX\s*=\s*["']accounting-workshop-pwa-cedric-["']/);
+    expect(serviceWorker).toMatch(/CACHE_NAME\s*=\s*`\$\{CACHE_PREFIX\}v\d+`/);
+    // CEDRIC: only this app's own caches are purged, never the original app's caches.
+    expect(serviceWorker).toContain("key.startsWith(CACHE_PREFIX)");
     expect(serviceWorker).toContain("self.registration.scope");
     expect(serviceWorker).toContain("event.request.method !== \"GET\"");
     expect(serviceWorker).toContain("event.request.mode === \"navigate\"");

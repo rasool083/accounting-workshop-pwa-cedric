@@ -1,0 +1,135 @@
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -66,6 +66,10 @@
+   saveState,
+   todayJalali,
+   jalaliDayDifference,
++  productCostForFormula,
++  repriceProductionRecord,
++  addProductionPriceTier,
++  productionUnitCostAt,
+   jalaliDateKey,
+   jalaliMonthDayBasis,
+   jalaliWeekday,
+@@ -101,6 +105,17 @@
+   purchasePaymentIdsExclusiveToInvoice,
+ } from "@/lib/accounting";
+ import {
++  completeDropboxAuth,
++  disconnectDropbox,
++  downloadDropboxBackup,
++  getDropboxAppKey,
++  hasPendingDropboxAuth,
++  isDropboxConnected,
++  listDropboxBackups,
++  startDropboxAuth,
++  uploadDropboxBackup,
++} from "@/lib/dropbox";
++import {
+   createGoogleDriveAdapter,
+   getDriveAccessToken,
+   LAST_VERIFIED_BACKUP,
+@@ -215,15 +230,27 @@
+   const orientationClass = "print-landscape";
+   document.body.classList.add(className);
+   document.body.classList.toggle(orientationClass, landscape);
++  // CEDRIC FIX: inject @page size directly so Firefox/Edge/Safari honour landscape too.
++  const pageStyle = document.createElement("style");
++  pageStyle.setAttribute("data-print-page", "1");
++  pageStyle.textContent = `@page { size: A4 ${landscape ? "landscape" : "portrait"}; margin: 10mm; }`;
++  document.head.appendChild(pageStyle);
++  let done = false;
+   const cleanup = () => {
++    if (done) return;
++    done = true;
+     document.body.classList.remove(className);
+     document.body.classList.remove(orientationClass);
++    pageStyle.remove();
+     onCleanup?.();
+     window.removeEventListener("afterprint", cleanup);
++    window.removeEventListener("focus", onFocus);
+   };
++  // Clean up only after the print dialog closes (Firefox keeps it open asynchronously).
++  const onFocus = () => window.setTimeout(cleanup, 500);
+   window.addEventListener("afterprint", cleanup);
+   window.print();
+-  window.setTimeout(cleanup, 1500);
++  window.setTimeout(() => window.addEventListener("focus", onFocus), 1000);
+ }
+ 
+ function backupDateKey() {
+@@ -231,21 +258,23 @@
+ }
+ 
+ function backupFilename(dateKey: string, sequence: number) {
+-  return `backup-${dateKey}-${String(sequence).padStart(3, "0")}.json`;
++  return `cedric-backup-${dateKey}-${String(sequence).padStart(3, "0")}.json`;
+ }
+ 
+ function nextLocalBackupSequence(dateKey: string) {
+-  const key = `accounting-workshop-pwa:backup-sequence:${dateKey}`;
++  const key = `accounting-workshop-pwa-cedric:backup-sequence:${dateKey}`;
+   const next = (Number(localStorage.getItem(key)) || 0) + 1;
+   localStorage.setItem(key, String(next));
+   return next;
+ }
+ 
+ function nextDriveBackupSequence(files: DriveBackupFile[], dateKey: string) {
+-  const prefix = `backup-${dateKey}-`;
++  // CEDRIC FIX: recognise both the new "cedric-backup-" and the legacy "backup-" names.
++  const prefixes = [`cedric-backup-${dateKey}-`, `backup-${dateKey}-`];
+   return (
+     (files.reduce((max, file) => {
+-      if (!file.name.startsWith(prefix) || !file.name.endsWith(".json"))
++      const prefix = prefixes.find(item => file.name.startsWith(item));
++      if (!prefix || !file.name.endsWith(".json"))
+         return max;
+       const sequence = Number(file.name.slice(prefix.length, -".json".length));
+       return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+@@ -554,6 +583,25 @@
+     LAST_VERIFIED_BACKUP,
+   ]);
+   const [driveLoading, setDriveLoading] = useState(false);
++  // CEDRIC r6: Dropbox is the primary cloud backup; Drive stays for old backups.
++  const [dropboxBackups, setDropboxBackups] = useState<DriveBackupFile[]>([]);
++  const [dropboxLoading, setDropboxLoading] = useState(false);
++  const [dropboxConnected, setDropboxConnected] = useState(() => isDropboxConnected());
++  useEffect(() => {
++    if (!hasPendingDropboxAuth()) return;
++    setActivePage("backup");
++    completeDropboxAuth()
++      .then(connected => {
++        if (!connected) return;
++        setDropboxConnected(true);
++        setNotice("Dropbox برای این مرورگر متصل شد");
++        void handleDropboxRefresh();
++      })
++      .catch(error =>
++        setNotice(error instanceof Error ? error.message : "اتصال Dropbox ناموفق بود")
++      );
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, []);
+   const [snapshotRevision, setSnapshotRevision] = useState(0);
+   const [driveClientId, setDriveClientIdState] = useState(() =>
+     getDriveClientId()
+@@ -563,7 +611,7 @@
+   const fileInput = useRef<HTMLInputElement>(null);
+ 
+   useEffect(() => {
+-    localStorage.setItem("accounting-workshop-pwa:v1", JSON.stringify(state));
++    localStorage.setItem("accounting-workshop-pwa-cedric:v1", JSON.stringify(state));
+   }, [state]);
+   useEffect(() => {
+     if (!notice) return;
+@@ -571,7 +619,10 @@
+     return () => window.clearTimeout(timer);
+   }, [notice]);
+   useEffect(() => {
+-    if (activePage === "backup") void handleDriveRefresh();
++    if (activePage === "backup") {
++      void handleDriveRefresh();
++      void handleDropboxRefresh();
++    }
+   }, [activePage]);
+   useEffect(() => {
+     setMobileNav(false);

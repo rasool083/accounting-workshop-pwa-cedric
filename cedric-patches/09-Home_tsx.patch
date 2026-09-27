@@ -1,0 +1,129 @@
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -855,6 +855,75 @@
+     }
+   }
+ 
++  async function handleDropboxConnect(appKey: string) {
++    setNotice("در حال رفتن به صفحهٔ اجازهٔ Dropbox...");
++    try {
++      await startDropboxAuth(appKey);
++    } catch (error) {
++      setNotice(error instanceof Error ? error.message : "اتصال Dropbox ناموفق بود");
++    }
++  }
++
++  async function handleDropboxRefresh() {
++    if (!isDropboxConnected()) return;
++    setDropboxLoading(true);
++    try {
++      const files = await listDropboxBackups();
++      setDropboxBackups(files);
++      setNotice(`${formatNumber(files.length)} نسخهٔ پشتیبان از Dropbox خوانده شد`);
++    } catch (error) {
++      setNotice(error instanceof Error ? error.message : "خواندن فهرست Dropbox ناموفق بود");
++    } finally {
++      setDropboxLoading(false);
++    }
++  }
++
++  async function handleDropboxUpload() {
++    if (!isDropboxConnected()) {
++      setNotice("Dropbox به این مرورگر متصل نیست؛ بکاپ محلی آماده دانلود است.");
++      handleExport();
++      return;
++    }
++    try {
++      const dateKey = backupDateKey();
++      const existing = await listDropboxBackups();
++      const sequence = nextDriveBackupSequence(existing, dateKey);
++      const uploaded = await uploadDropboxBackup(
++        backupFilename(dateKey, sequence),
++        exportUnifiedPayload(state, loadVendorDirectory())
++      );
++      setDropboxBackups([uploaded, ...existing.filter(file => file.id !== uploaded.id)]);
++      setNotice(`پشتیبان ${dateKey} · ردیف ${formatNumber(sequence)} در Dropbox ذخیره شد`);
++    } catch (error) {
++      setNotice(error instanceof Error ? error.message : "ذخیره در Dropbox ناموفق بود");
++    }
++  }
++
++  async function handleDropboxRestore(fileId: string) {
++    const file = dropboxBackups.find(item => item.id === fileId);
++    if (!file) return;
++    if (
++      !window.confirm(
++        `داده‌های محلی با ${file.name} از Dropbox جایگزین شود؟ یک نسخهٔ بازگردانی از دادهٔ فعلی خودکار ساخته می‌شود.`
++      )
++    )
++      return;
++    try {
++      const payload = await downloadDropboxBackup(file.id);
++      applyImportedBackup(payload, `بازیابی از ${file.name}`, "RESTORE_DROPBOX");
++    } catch (error) {
++      setNotice(error instanceof Error ? error.message : "بازیابی از Dropbox ناموفق بود");
++    }
++  }
++
++  async function handleDropboxDisconnect() {
++    if (!window.confirm("اتصال Dropbox از این مرورگر قطع شود؟ فایل‌های داخل Dropbox پاک نمی‌شوند.")) return;
++    await disconnectDropbox();
++    setDropboxConnected(false);
++    setDropboxBackups([]);
++    setNotice("اتصال Dropbox قطع شد");
++  }
++
+   async function handleDriveConnect(clientId: string) {
+     setNotice("در حال بازکردن پنجرهٔ مجوز Google Drive...");
+     try {
+@@ -1191,6 +1260,17 @@
+               onDriveRefresh={handleDriveRefresh}
+               driveClientId={driveClientId}
+               onDriveConnect={handleDriveConnect}
++              dropbox={{
++                connected: dropboxConnected,
++                appKey: getDropboxAppKey(),
++                backups: dropboxBackups,
++                loading: dropboxLoading,
++                onConnect: handleDropboxConnect,
++                onUpload: handleDropboxUpload,
++                onRefresh: handleDropboxRefresh,
++                onRestore: handleDropboxRestore,
++                onDisconnect: handleDropboxDisconnect,
++              }}
+               snapshotRevision={snapshotRevision}
+               onRestoreSnapshot={handleRestoreSnapshot}
+               onDeleteSnapshot={handleDeleteSnapshot}
+@@ -1824,15 +1904,16 @@
+             total: quantity * unitPrice,
+           };
+       const existingItem = editingInvoice?.items.find(item => item.productId === row.productId);
+-      const latestCost = [...state.productionRecords]
++      const latestCostRecord = [...state.productionRecords]
+         .filter(record =>
+           record.outputProductId === row.productId &&
+           jalaliDateKey(record.date) <= jalaliDateKey(form.date) &&
+           Number.isFinite(record.unitCost) &&
+           record.unitCost >= 0
+         )
+-        .sort((a, b) => jalaliDateKey(b.date).localeCompare(jalaliDateKey(a.date)))[0]
+-        ?.unitCost;
++        .sort((a, b) => jalaliDateKey(b.date).localeCompare(jalaliDateKey(a.date)))[0];
++      // CEDRIC (request 3): use the batch price tier valid on the invoice date.
++      const latestCost = latestCostRecord ? productionUnitCostAt(latestCostRecord, form.date) : undefined;
+       return {
+         id: createId("invoice-item"),
+         productId: row.productId || undefined,
+@@ -2883,6 +2964,12 @@
+                           <span>سررسید: {check ? formatDate(check.dueDate) : "—"}</span>
+                           <span>مبلغ تخصیص: {formatMoney(item.amount, state.settings.currency)}</span>
+                           <span>تعداد روز: {formatNumber(item.days || 0)} روز</span>
++                          {check && check.dueDate ? (() => {
++                            // CEDRIC (request 1): informational collection delay, no interest.
++                            const end = check.collectedDate || (check.status === "وصول شده" ? "" : todayJalali());
++                            const delay = end ? Math.max(0, jalaliDayDifference(check.dueDate, end)) : 0;
++                            return <span>دیرکرد وصول: {formatNumber(delay)} روز (اطلاعی)</span>;
++                          })() : null}
+                         </div>
+                       );
+                     })}

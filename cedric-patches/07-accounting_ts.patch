@@ -1,0 +1,104 @@
+--- a/client/src/lib/accounting.ts
++++ b/client/src/lib/accounting.ts
+@@ -701,9 +701,38 @@
+     const priceUnit = latest?.unit || product.unit;
+     return price / Math.max(0.000001, unitConversionToBase(product, priceUnit));
+   };
+-  const unitPrice = (product: Product) =>
++  // CEDRIC FIX (bug 1 / request 2): a production package is priced from its own formula
++  // (latest prices, unit conversion), not from the price list which is usually 0.
++  const estimating = new Set<string>();
++  const estimatedFormulaUnitCost = (productId: string): number => {
++    const packageFormulaId = outputFormulaIds.get(productId);
++    if (!packageFormulaId || estimating.has(packageFormulaId)) return 0;
++    const packageFormula = formulas.get(packageFormulaId);
++    const packageProduct = productById(productId);
++    if (!packageFormula || !packageProduct) return 0;
++    const batch = quantityInBase(
++      packageProduct,
++      packageFormula.outputQuantity,
++      packageFormula.outputUnit || packageProduct.unit
++    );
++    if (batch <= 0) return 0;
++    estimating.add(packageFormulaId);
++    try {
++      let cost = 0;
++      for (const material of packageFormula.materials) {
++        const materialProduct = productById(material.productId);
++        if (!materialProduct) continue;
++        cost += quantityInBase(materialProduct, material.quantity, material.unit) * unitPrice(materialProduct);
++      }
++      cost += packageFormula.costs.reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0);
++      return cost / batch;
++    } finally {
++      estimating.delete(packageFormulaId);
++    }
++  };
++  const unitPrice = (product: Product): number =>
+     product.category === "بسته تولید"
+-      ? Math.max(0, standalonePrice(product))
++      ? Math.max(0, computedUnitCosts.get(product.id) || estimatedFormulaUnitCost(product.id) || historicalUnitCost(product.id) || standalonePrice(product))
+       : Math.max(0, computedUnitCosts.get(product.id) || historicalUnitCost(product.id) || standalonePrice(product));
+   const weightToGrams = (value: number, unit: string) => {
+     if (unit === "کیلوگرم") return value * 1000;
+@@ -750,8 +779,10 @@
+       (sum, material) => sum + weightToGrams(material.quantity, material.unit),
+       0
+     );
+-    const weightScale = actualPieceWeight > 0 && plannedWeightPerPiece > 0
+-      ? weightToGrams(actualPieceWeight, runOptions.pieceWeightUnit || "گرم") / plannedWeightPerPiece
++    // CEDRIC FIX (bug 5): formula weights describe the whole formula batch; compare per piece.
++    const plannedWeightPerOnePiece = plannedWeightPerPiece / batchBase;
++    const weightScale = actualPieceWeight > 0 && plannedWeightPerOnePiece > 0
++      ? weightToGrams(actualPieceWeight, runOptions.pieceWeightUnit || "گرم") / plannedWeightPerOnePiece
+       : 1;
+     visiting.add(currentFormulaId);
+     let materialCost = 0;
+@@ -909,7 +940,8 @@
+   );
+   const products = state.products.map(product => ({ ...product }));
+   const productById = (id: string) => products.find(product => product.id === id);
+-  for (const record of runRecords) {
++  // CEDRIC FIX (bug 2): undo the parent first, then the nested packages it consumed.
++  for (const record of [...runRecords].reverse()) {
+     const output = productById(
+       record.outputProductId || record.formulaSnapshot?.outputProductId ||
+       state.productionFormulas.find(formula => formula.id === record.formulaId)?.outputProductId || ""
+@@ -959,7 +991,7 @@
+   };
+ }
+ 
+-export const STORAGE_KEY = "accounting-workshop-pwa:v1";
++export const STORAGE_KEY = "accounting-workshop-pwa-cedric:v1";
+ export const CORRUPT_STORAGE_KEY = `${STORAGE_KEY}:corrupt-snapshot`;
+ 
+ const seedState: AppState = {
+@@ -2246,7 +2278,9 @@
+   const eligibleChecks = [...checks]
+     .filter(
+       check =>
+-        !["باطل", "برگشتی", "عودت داده شده", "جایگزین شده", "خرج شده"].includes(
++        // CEDRIC FIX (request 1): a bounced or spent check keeps its invoice allocation;
++        // only a voided, returned or replaced check releases it.
++        !["باطل", "عودت داده شده", "جایگزین شده"].includes(
+           check.status
+         )
+     )
+@@ -2403,7 +2437,7 @@
+         jalaliDateKey(b.date).localeCompare(jalaliDateKey(a.date)) ||
+         b.id.localeCompare(a.id)
+       )[0];
+-    const saleUnitCost = Number(item.unitCostAtSale ?? saleProduction?.unitCost);
++    const saleUnitCost = Number(item.unitCostAtSale ?? (saleProduction ? productionUnitCostAt(saleProduction, invoice.date) : undefined));
+     if (!Number.isFinite(saleUnitCost) || saleUnitCost < 0) apparentUnitCostKnown = false;
+     else apparentCost += quantityBase * saleUnitCost;
+     const production = [...state.productionRecords]
+@@ -2416,7 +2450,7 @@
+         jalaliDateKey(b.date).localeCompare(jalaliDateKey(a.date)) ||
+         b.id.localeCompare(a.id)
+       )[0];
+-    const currentUnitCost = production?.unitCost ?? saleUnitCost;
++    const currentUnitCost = production ? productionUnitCostAt(production, collectionDate) : saleUnitCost;
+     if (!Number.isFinite(currentUnitCost) || currentUnitCost < 0) currentUnitCostKnown = false;
+     else currentCost += quantityBase * currentUnitCost;
+   }

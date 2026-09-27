@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+import { codeChallengeFor, createCodeVerifier, dropboxEntriesToBackups, dropboxRedirectUri } from "./dropbox";
+
+describe("Dropbox backup (CEDRIC r6)", () => {
+  it("builds the PKCE S256 challenge (SHA-256, base64url, no padding)", async () => {
+    expect(await codeChallengeFor("dBjftJeZ4CVP-mJ92K9SXYRWLNAZ6x9UwW4vBEdMM0k")).toBe(
+      "-0l3Vxc9ElIJwdb0r1jVF57OVy8-2_Mzw-QUzT9qHPI"
+    );
+    const verifier = createCodeVerifier(new Uint8Array(48).fill(7));
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]{43,128}$/);
+  });
+
+  it("uses the Pages base path as redirect", () => {
+    expect(dropboxRedirectUri("https://rasool083.github.io", "/accounting-workshop-pwa-cedric/")).toBe(
+      "https://rasool083.github.io/accounting-workshop-pwa-cedric/"
+    );
+    expect(dropboxRedirectUri("http://localhost:3000", "/")).toBe("http://localhost:3000/");
+  });
+
+  it("keeps only backup JSON files, newest first", () => {
+    const list = dropboxEntriesToBackups([
+      { ".tag": "folder", id: "1", name: "backup-old", path_lower: "/backup-old" },
+      { ".tag": "file", id: "2", name: "notes.txt", path_lower: "/notes.txt" },
+      { ".tag": "file", id: "3", name: "backup-1405-07-01-001.json", path_lower: "/backup-1405-07-01-001.json", server_modified: "2026-09-23T10:00:00Z", size: 10 },
+      { ".tag": "file", id: "4", name: "cedric-backup-1405-07-05-002.json", path_lower: "/cedric-backup-1405-07-05-002.json", server_modified: "2026-09-27T10:00:00Z", size: 20 },
+    ]);
+    expect(list.map(file => file.name)).toEqual(["cedric-backup-1405-07-05-002.json", "backup-1405-07-01-001.json"]);
+    expect(list[0]).toMatchObject({ id: "/cedric-backup-1405-07-05-002.json", size: "20" });
+  });
+});

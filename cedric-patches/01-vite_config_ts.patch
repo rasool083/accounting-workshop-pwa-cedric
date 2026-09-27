@@ -1,0 +1,11 @@
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -25,7 +25,7 @@
+ 
+ const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime(), vitePluginManusDebugCollector(), vitePluginStorageProxy()];
+ export default defineConfig({
+-  base: process.env.GITHUB_ACTIONS ? "/accounting-workshop-pwa/" : "/",
++  base: process.env.GITHUB_ACTIONS ? "/accounting-workshop-pwa-cedric/" : "/",
+   define: {
+     "import.meta.env.VITE_BUILD_COMMIT": JSON.stringify(BUILD_COMMIT),
+   },

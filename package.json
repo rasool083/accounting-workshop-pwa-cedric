@@ -4,14 +4,15 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "vite --host",
-    "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
+    "dev": "node scripts/apply-cedric-patches.mjs && vite --host",
+    "build": "node scripts/apply-cedric-patches.mjs && vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "android:init": "pnpm build && cap add android",
     "android:sync": "pnpm build && cap sync android",
     "android:open": "cap open android",
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "vite preview --host",
-    "check": "tsc --noEmit",
+    "check": "node scripts/apply-cedric-patches.mjs && tsc --noEmit",
+    "test": "node scripts/apply-cedric-patches.mjs && vitest run",
     "format": "prettier --write ."
   },
   "dependencies": {

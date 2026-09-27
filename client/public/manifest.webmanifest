@@ -1,6 +1,7 @@
 {
-  "name": "حسابداری کارگاه | دفتر هوشمند",
-  "short_name": "حسابداری کارگاه",
+  "id": "/accounting-workshop-pwa-cedric/",
+  "name": "حسابداری کارگاه (نسخه Cedric)",
+  "short_name": "حسابداری کارگاه Cedric",
   "description": "دفتر محلی و آفلاین حسابداری کارگاه",
   "lang": "fa",
   "dir": "rtl",

@@ -1,5 +1,5 @@
 export const BUILD_IDENTITY = {
-  repository: "rasool083/accounting-workshop-pwa",
+  repository: "rasool083/accounting-workshop-pwa-cedric",
   branch: "main",
   application: "حسابداری کارگاه | دفتر هوشمند",
   commit: import.meta.env.VITE_BUILD_COMMIT || "unknown",

@@ -1,0 +1,11 @@
+--- a/client/src/lib/backup.ts
++++ b/client/src/lib/backup.ts
+@@ -71,7 +71,7 @@
+   return (hash >>> 0).toString(16).padStart(8, "0");
+ }
+ 
+-const RESTORE_SNAPSHOT_KEY = "accounting-workshop-pwa:restore-snapshots:v1";
++const RESTORE_SNAPSHOT_KEY = "accounting-workshop-pwa-cedric:restore-snapshots:v1";
+ 
+ export type RestoreSnapshot = {
+   id: string;

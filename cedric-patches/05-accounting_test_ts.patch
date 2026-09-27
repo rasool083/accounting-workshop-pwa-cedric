@@ -1,0 +1,104 @@
+--- a/client/src/lib/accounting.test.ts
++++ b/client/src/lib/accounting.test.ts
+@@ -1,6 +1,9 @@
+ import { describe, expect, it } from "vitest";
+ import {
+   getSettlementBalances,
++  productCostForFormula,
++  estimateFormulaUnitCost,
++  productionUnitCostAt,
+   adjustInventoryBalance,
+   executeProduction,
+   normalizeState,
+@@ -261,18 +264,34 @@
+     );
+   });
+ 
+-  it("does not allocate a customer check after it is spent", () => {
+-    const invoice = {
+-      id: "purchase-check-invoice", number: "P-1", type: "فروش" as const,
+-      date: "1405/01/01", partyId: "customer", items: [], allocations: [],
+-      amount: 1000, paidAmount: 0, status: "باز" as const, note: "",
+-    };
+-    const spentCheck = {
+-      id: "spent-customer-check", number: "C-1", partyId: "customer",
+-      receivedDate: "1405/01/01", dueDate: "1405/02/01", amount: 1000,
+-      status: "خرج شده" as const, bank: "", returnPartyId: "supplier",
+-    };
+-    expect(settleChecksFIFO([spentCheck], [invoice])).toEqual([]);
++  // CEDRIC: a spent (endorsed) or bounced customer check still settles the customer's invoice;
++  // only void / replaced / returned checks release the allocation.
++  const cedricInvoice = () => ({
++    id: "sale-1", number: "S-1", type: "فروش" as const,
++    date: "1405/01/01", partyId: "customer", items: [], allocations: [],
++    amount: 1000, paidAmount: 0, status: "باز" as const, note: "",
++  });
++  const cedricCheck = (status: any) => ({
++    id: "customer-check", number: "C-1", partyId: "customer",
++    receivedDate: "1405/01/01", dueDate: "1405/02/01", amount: 1000,
++    status, bank: "", returnPartyId: "supplier",
++  });
++
++  it("keeps a spent customer check allocated to the customer's invoice", () => {
++    const result = settleChecksFIFO([cedricCheck("خرج شده")], [cedricInvoice()]);
++    expect(result).toHaveLength(1);
++    expect(result[0].invoiceId).toBe("sale-1");
++    expect(result[0].principalAmount).toBeGreaterThan(0);
++  });
++
++  it("keeps a bounced check allocated until it is voided or replaced", () => {
++    const result = settleChecksFIFO([cedricCheck("برگشتی")], [cedricInvoice()]);
++    expect(result).toHaveLength(1);
++    expect(result[0].checkId).toBe("customer-check");
++  });
++
++  it.each(["باطل", "جایگزین شده", "عودت داده شده"])("releases the allocation when the check is %s", status => {
++    expect(settleChecksFIFO([cedricCheck(status)], [cedricInvoice()])).toEqual([]);
+   });
+ 
+   it("allocates supplier payments across the oldest purchase invoices", () => {
+@@ -1318,3 +1337,44 @@
+     expect(line.total).toBe(108_000_000);
+   });
+ });
++
++describe("CEDRIC: package cost and batch price tiers", () => {
++  const product = (id: string, unit: string, price: number, category?: any) =>
++    ({ id, code: id, name: id, unit, stock: 0, minStock: 0, price, category }) as any;
++  const baseState = () => {
++    const state = normalizeState({} as any);
++    return {
++      ...state,
++      products: [product("raw", "کیلوگرم", 10), product("pkg", "عدد", 0, "بسته تولید"), product("final", "عدد", 0, "محصول تولیدی")],
++      priceHistory: [],
++      productionRecords: [],
++      productionFormulas: [
++        { id: "f-pkg", name: "pkg", formulaType: "بسته تولید", outputProductId: "pkg", outputQuantity: 1, outputUnit: "عدد",
++          materials: [{ id: "m1", productId: "raw", quantity: 2, unit: "کیلوگرم" }], costs: [], note: "" },
++        { id: "f-final", name: "final", formulaType: "قطعه", outputProductId: "final", outputQuantity: 2, outputUnit: "عدد",
++          materials: [{ id: "m2", productId: "pkg", quantity: 3, unit: "عدد" }], costs: [{ id: "c1", title: "دستمزد", amount: 40 }], note: "" },
++      ],
++    } as any;
++  };
++
++  it("prices a package from its own formula instead of its list price (0)", () => {
++    expect(productCostForFormula(baseState(), "pkg")).toBeCloseTo(20, 6);
++  });
++
++  it("uses the package's formula cost inside a parent formula", () => {
++    const state = baseState();
++    const finalFormula = state.productionFormulas.find((item: any) => item.id === "f-final");
++    // (3 packages x 20 + 40 labour) / 2 pieces = 50
++    expect(estimateFormulaUnitCost(state, finalFormula)).toBeCloseTo(50, 6);
++  });
++
++  it("picks the price tier valid on the invoice date", () => {
++    const record = { id: "b1", unitCost: 100, priceTiers: [
++      { id: "t1", date: "1405/03/01", quantity: 5, unitCost: 120 },
++      { id: "t2", date: "1405/05/01", quantity: 5, unitCost: 150 },
++    ] } as any;
++    expect(productionUnitCostAt(record, "1405/02/15")).toBe(100);
++    expect(productionUnitCostAt(record, "1405/03/01")).toBe(120);
++    expect(productionUnitCostAt(record, "1405/06/10")).toBe(150);
++  });
++});

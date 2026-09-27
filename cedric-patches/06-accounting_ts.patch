@@ -1,0 +1,132 @@
+--- a/client/src/lib/accounting.ts
++++ b/client/src/lib/accounting.ts
+@@ -286,9 +286,129 @@
+   formulaSnapshot?: ProductionFormula;
+   outputProductId?: string;
+   outputProductName?: string;
++  /** CEDRIC (request 3): extra price rows for this batch, created by «بروزرسانی قیمت». */
++  priceTiers?: ProductionPriceTier[];
+   note: string;
+ }
+ 
++export interface ProductionPriceTier {
++  id: string;
++  /** Jalali date from which this unit cost applies to new invoices. */
++  date: string;
++  /** Quantity (base unit) this new price was set for. Informational. */
++  quantity: number;
++  /** Cost per base unit. */
++  unitCost: number;
++  note?: string;
++}
++
++/** CEDRIC (request 3): unit cost of a batch valid on a given date (latest tier on/before it). */
++export function productionUnitCostAt(record: ProductionRecord, date: string): number {
++  const key = jalaliDateKey(date);
++  const tier = [...(record.priceTiers || [])]
++    .filter(item => jalaliDateKey(item.date) <= key && Number.isFinite(item.unitCost) && item.unitCost >= 0)
++    .sort((x, y) => jalaliDateKey(y.date).localeCompare(jalaliDateKey(x.date)) || y.id.localeCompare(x.id))[0];
++  return tier ? tier.unitCost : record.unitCost;
++}
++
++/** CEDRIC: latest list price per base unit of a product (price history up to today, else product price). */
++export function latestProductUnitPrice(state: AppState, productId: string): number {
++  const product = state.products.find(item => item.id === productId);
++  if (!product) return 0;
++  const today = jalaliDateKey(todayJalali());
++  const history = state.priceHistory
++    .filter(item => item.productId === productId && jalaliDateKey(item.effectiveDate) <= today)
++    .sort((x, y) => jalaliDateKey(y.effectiveDate).localeCompare(jalaliDateKey(x.effectiveDate)))[0];
++  if (history) {
++    const conversion = unitConversionToBase(product, history.unit || product.unit) || 1;
++    return (Number(history.price) || 0) / conversion;
++  }
++  return Number(product.price) || 0;
++}
++
++/**
++ * CEDRIC (bug 1 / request 2): estimated cost per base unit of a formula's output, from
++ * latest prices. Materials that are themselves production packages are priced from their
++ * own formula (recursively, with unit conversion) instead of the price list (usually 0).
++ */
++export function estimateFormulaUnitCost(
++  state: AppState,
++  formula: ProductionFormula,
++  visiting: Set<string> = new Set()
++): number {
++  if (visiting.has(formula.id)) return 0;
++  const output = state.products.find(item => item.id === formula.outputProductId);
++  const batch = output
++    ? quantityInBase(output, formula.outputQuantity, formula.outputUnit || output.unit)
++    : Number(formula.outputQuantity) || 0;
++  if (batch <= 0) return 0;
++  visiting.add(formula.id);
++  try {
++    let cost = 0;
++    for (const material of formula.materials) {
++      const product = state.products.find(item => item.id === material.productId);
++      if (!product) continue;
++      cost += quantityInBase(product, material.quantity, material.unit) * productCostForFormula(state, product.id, visiting);
++    }
++    cost += formula.costs.reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0);
++    return cost / batch;
++  } finally {
++    visiting.delete(formula.id);
++  }
++}
++
++/** CEDRIC: cost per base unit used inside a formula: package → its own formula, else latest price. */
++export function productCostForFormula(state: AppState, productId: string, visiting: Set<string> = new Set()): number {
++  const packageFormula = state.productionFormulas.find(
++    item => item.outputProductId === productId && item.formulaType === "بسته تولید"
++  );
++  if (packageFormula) {
++    const estimated = estimateFormulaUnitCost(state, packageFormula, visiting);
++    if (estimated > 0) return estimated;
++    const last = [...state.productionRecords]
++      .filter(record => record.outputProductId === productId && record.unitCost > 0)
++      .sort((x, y) => jalaliDateKey(y.date).localeCompare(jalaliDateKey(x.date)))[0];
++    if (last) return productionUnitCostAt(last, todayJalali());
++  }
++  return latestProductUnitPrice(state, productId);
++}
++
++/**
++ * CEDRIC (request 3): re-price a batch at latest prices, keeping its actual consumption
++ * (waste, actual weight) from materialUsage. Returns the new cost per base unit.
++ */
++export function repriceProductionRecord(state: AppState, record: ProductionRecord): number {
++  const usage = record.materialUsage || [];
++  const base = Number(record.outputQuantityBase ?? record.outputQuantity) || 0;
++  if (!usage.length || base <= 0) {
++    const formula = record.formulaSnapshot || state.productionFormulas.find(item => item.id === record.formulaId);
++    return formula ? estimateFormulaUnitCost(state, formula) : record.unitCost;
++  }
++  let materialCost = 0;
++  for (const item of usage) {
++    const product = state.products.find(row => row.id === item.productId);
++    if (!product) continue;
++    materialCost += quantityInBase(product, item.actualQuantity, item.unit) * productCostForFormula(state, product.id);
++  }
++  return (materialCost + (Number(record.overheadCost) || 0)) / base;
++}
++
++/** CEDRIC (request 3): append a price row to a batch. */
++export function addProductionPriceTier(
++  state: AppState,
++  recordId: string,
++  tier: Omit<ProductionPriceTier, "id">
++): AppState {
++  return {
++    ...state,
++    productionRecords: state.productionRecords.map(record =>
++      record.id === recordId
++        ? { ...record, priceTiers: [...(record.priceTiers || []), { ...tier, id: `tier-${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }] }
++        : record
++    ),
++  };
++}
++
+ export interface Transaction {
+   id: string;
+   type: TransactionType;

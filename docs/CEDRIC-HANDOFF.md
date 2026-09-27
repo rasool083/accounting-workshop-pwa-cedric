@@ -1,89 +1,65 @@
 # CEDRIC HANDOFF: accounting-workshop-pwa-cedric
 
-Last updated: 2026-09-27 (1405-07-05), code revision **r5** (not yet in the repo). Author: Cedric (AI teammate) for Rasool Ghoddoosi.
+Last updated: 2026-09-27 (1405-07-05), code revision **r6**, committed to `main` by Cedric (AI teammate) for Rasool Ghoddoosi.
 Purpose: anyone (AI or person) can continue from exactly this point.
 
 ## 1. Repositories and rules
 - Original: `rasool083/accounting-workshop-pwa`, READ-ONLY, never modify. Stays installed in Chrome.
-- Working copy: `rasool083/accounting-workshop-pwa-cedric`, all work here. Starts from "Initial commit" 89eb14c (tree identical to original main b518fd3). No history (created from a temporary template flag on the original, flag removed after ~6 s).
-- Goal: a second, independent install (another browser) with its own storage, cache and backups.
-- Owner granted permission (2026-09-27) for Cedric to upload/commit and to enable Pages.
+- Working copy: `rasool083/accounting-workshop-pwa-cedric`. ALL code and docs changes go here. Owner granted Cedric standing permission to commit here (2026-09-27).
+- History: `89eb14c` Initial commit (tree identical to original main `b518fd3`) > `9a534f7` handoff doc r5 > r6 commit (this one).
+- Goal: a second, independent install (another browser) with its own storage keys, cache and backups.
 - At the end of every session, update this file.
 
-## 2. Connection limits (why code is uploaded by hand)
-- Cedric's GitHub connection cannot send `client/src/pages/Home.tsx` (~435 KB) or `client/src/lib/accounting.ts` (~118 KB) through the API.
-- A helper workflow that applies the files was refused: the connection has no `workflow` scope.
-- So code revisions are delivered as a zip of changed files with repo paths. Owner: unzip, then drag `client/`, `docs/` and `vite.config.ts` into GitHub "Add file > Upload files". Do NOT upload the zip itself (GitHub does not extract it).
-- Small files (like this doc) Cedric commits directly.
+## 2. How code is committed (patch method)
+- Cedric's GitHub connection cannot send `client/src/pages/Home.tsx` (~435 KB) or `client/src/lib/accounting.ts` (~118 KB) whole, and has no `workflow` scope.
+- So large-file changes live as small unified diffs in `cedric-patches/` (each < 6 KB), applied at build time by `scripts/apply-cedric-patches.mjs`.
+- `cedric-patches/manifest.json` lists, per target file, the git hash BEFORE and AFTER all its patches. The script: hash == after -> skip (already patched); hash == before -> apply patches, then verify the after-hash; anything else -> exit 1 and stop the build (no half-patched deploy).
+- `package.json` runs the script before `dev`, `build`, `check` and `test`. Running it twice changes nothing (verified).
+- Small/new files (dropbox.ts, sw.js, manifest, tests, docs) are committed as whole files.
+- To edit a patched file later: run `node scripts/apply-cedric-patches.mjs` locally, edit, then EITHER commit the full file (and delete its patches + manifest entry) OR regenerate the patch and the after-hash.
 
 ## 3. GitHub Pages
-- Already enabled, source = GitHub Actions. URL: https://rasool083.github.io/accounting-workshop-pwa-cedric/
-- Until r5 is uploaded, the site runs the initial code whose storage keys equal the Chrome install. Do not enter data there before r5.
-- After the upload commit, the Pages workflow deploys automatically.
+- Enabled, source = GitHub Actions. URL: https://rasool083.github.io/accounting-workshop-pwa-cedric/
+- White page root cause (before r6): `vite.config.ts` base was `/accounting-workshop-pwa/` (the original repo path), so JS/CSS 404ed on the -cedric site. Fixed in patch 01 (base `/accounting-workshop-pwa-cedric/`).
+- Both sites share the origin `rasool083.github.io`, so r6 also uses separate storage keys, service-worker cache name and manifest id/scope (buildIdentity.ts, sw.js, manifest.webmanifest). Never ship the base fix alone: old code would read/write the Chrome install's data.
 
 ## 4. Owner decisions (binding)
 - Negative raw-material stock during production is INTENDED. Do not block it.
-- A check's invoice allocation changes ONLY when the check is voided (باطل), replaced (جایگزین) or returned-to-owner (عودت). Bounced (برگشتی) and spent (خرج‌شده) checks keep their allocation.
-- Therefore "partner bounced check" and "supplier balance with bounced checks" are NOT bugs.
-- Collection delay (دیرکرد وصول) is informational only: days from due date to collectedDate (or today if not collected). No cost.
+- A check's invoice allocation changes ONLY when the check is voided (باطل), replaced (جایگزین) or returned-to-owner (عودت). Bounced (برگشتی) and spent (خرج‌شده) checks keep their allocation. So "partner bounced check" and "supplier balance with bounced checks" are NOT bugs.
+- Collection delay (دیرکرد وصول) is informational only: days from due date to collectedDate (or today). No cost.
 - Sub-assembly (بسته) price comes from its own formula at latest prices with unit conversion, not the price list.
 - Batch price update: user enters a quantity; that quantity gets a new price row at latest prices, rest keeps old price; batch actual consumption (waste, actual weight) preserved; each invoice's profit uses the price row valid on the invoice date.
-- Backups: new names `cedric-backup-*`; old `backup-*` files still restore (internal format unchanged).
-- Storage: Dropbox instead of Google Drive (one authorization, refresh token, no repeated consent). Drive kept for restoring old backups only.
+- Backups: new names `cedric-backup-*`; old `backup-*` files still restore (format unchanged).
+- Storage: Dropbox instead of Google Drive (one authorization, refresh token). Drive kept for restoring old backups only.
 - Landscape print must work in Chrome, Edge and Firefox.
 
-## 5. Bugs, root causes, fixes (all in r5)
+## 5. Bugs, root causes, fixes (r5 + r6)
 | # | Bug | Root cause | Fix |
 |---|-----|-----------|-----|
-| 1 | Sub-assembly cost 0 in parent | parent read price list | `accounting.ts`: cost from same production run > estimate from sub-assembly formula (latest prices, unit conversion, recursive) > last production cost > price list. Same in formula form (`Home.tsx` ~9047). |
-| 2 | Nested production reversal wrong | reversed in production order | reverse in reverse order (child first, then parent). |
-| 3 | Actual-weight ratio wrong for multi-piece formulas | piece weight compared to whole-batch weight | per-piece reference weight, else formula weight / pieces. |
-| 4 | Bounced/spent checks released invoice allocation | FIFO exclusion list contained them | FIFO excludes only void/replaced/returned (`accounting.ts` ~2129). |
-| 5 | Person statement: returned check debit-only, replaced check credited twice | statement lines (`Home.tsx` ~8242) | returned and replaced removed from statement; bounced stays credited until void/replaced. |
-| 6 | Backup numbering duplicates | only knew `backup-` (`Home.tsx` ~257) | recognizes `cedric-backup-` and `backup-`. |
-| 7 | sw.js deleted all same-origin caches incl. original app's | broad cleanup | deletes only its own `accounting-workshop-pwa-cedric` caches. |
-| 8 | Landscape print Chrome-only | `@page` rule; print styles removed 1.5 s after click | explicit landscape A4 at print time; cleanup on `afterprint`. |
+| 1 | Sub-assembly cost 0 in parent | parent read price list | cost from same production run > sub-assembly formula (latest prices, unit conversion, recursive) > last production cost > price list (accounting.ts, patches 06-07; formula form in Home.tsx) |
+| 2 | Nested production reversal wrong | reversed in production order | reverse child first, then parent |
+| 3 | Actual-weight ratio wrong for multi-piece formulas | piece weight vs whole-batch weight | per-piece reference weight, else formula weight / pieces |
+| 4 | Bounced/spent checks released invoice allocation | FIFO exclusion list contained them | FIFO excludes only void/replaced/returned |
+| 5 | Person statement: returned check shown debit-only | missing reversing row | statement fix (patch 10) |
+| 6 | White Pages site | wrong vite base | patch 01 |
+| 7 | Landscape print broken outside Chrome | print CSS | fixed (patch 08) |
+| - | Batch price update, invoice price by date, collection delay display | new features per decisions | patches 09-10 |
+| - | Dropbox backup | new | dropbox.ts + backup page card (patch 11), OAuth PKCE, no client secret |
 
-## 6. Features added (r5)
-- Separate install: storage keys (7 places), `vite.config.ts` base `/accounting-workshop-pwa-cedric/`, manifest name, short name "حسابداری کارگاه Cedric", cache name.
-- Batch "بروزرسانی قیمت" button next to "ویرایش این بچ": shows current/new unit cost, asks quantity, stores price rows (date, qty, unit cost) on the production record; rows shown under the batch; batch edit preserves rows; invoice registration and profit report (`accounting.ts` ~2314) use the row valid on invoice date.
-- Invoice print: under each allocated check, days and collection delay (informational). Profit and late fee stay hidden in customer print.
+Still open from the first review (not yet fixed): payment-rule dayBasis ignored; tier rate applied flat (needs owner decision); dashboard balance ignores cash events; month close (no lock, 8-month cards vs full CSV, duplicate closes, CSV escaping); cash sync misses date-only / item / qty changes; Delete All before download confirmed; Drive folder IDs hardcoded (googleDrive.ts); raw English error on corrupt backup; state saved twice per input.
 
-## 7. Changed files (vs 89eb14c)
-client/public/manifest.webmanifest, client/public/sw.js, client/src/lib/accounting.ts, accounting.test.ts, backup.ts, buildIdentity.ts, googleDrive.ts, pwa.test.ts, vendorDirectory.ts, client/src/pages/Home.tsx, vite.config.ts, docs/CEDRIC-HANDOFF.md.
-Delivered as `cedric-upload-r5.zip` (12 files, repo paths).
+## 6. Tests
+- r6 sandbox run: 95/95 tests passed in 11 files (vitest), including new dropbox.test.ts (PKCE, redirect URI on Pages, backup list filter/sort) and pwa.test.ts.
+- NOT yet run on r6: full `tsc` type check and full `vite build` in CI. Check the GitHub Actions run of the r6 commit.
 
-## 8. Verification (r5)
-- Unit tests: 92/92 pass (10 files). New: bounced keeps allocation; void/replaced/returned release it; sub-assembly price from formula = 20 (not 0); parent formula = 50 per piece; batch price row chosen by invoice date. 3 tests updated to intended behavior (spent check, short name, cache name + never delete original cache).
-- r4: `tsc --noEmit` clean; 6 project scripts pass (FIFO, audit-harness, risk-probes, price-unit-fixture, Jalali calendar, currency-dry-run). r5 changed tests and name strings only; re-run tsc before release.
-- NOT yet run: full `pnpm build`. The Pages workflow will run it after upload; check the Actions tab.
+## 7. Dropbox setup (owner, one time)
+1. Dropbox App Console > Create app > Scoped access > App folder.
+2. Redirect URI: `https://rasool083.github.io/accounting-workshop-pwa-cedric/`
+3. Permissions: files.content.write, files.content.read, files.metadata.read.
+4. Copy the App key into the Dropbox card on the backup page, press connect, approve once.
 
-## 9. Operating method
-- Work on a sandbox copy (tgz revisions r1..r5); original repo never touched.
-- Tests: vitest with minimal config (aliases `@` -> client/src, `@shared` -> shared, include `client/src/lib/**/*.test.ts`). `vite.config.ts` needs git for the version, so `git init` + commit before using the real config.
-- `npm install --legacy-peer-deps` or pnpm (lockfile is pnpm). Run tests, tsc and build as separate steps (together they time out).
-
-## 10. Dropbox plan (r6, in progress)
-- New `client/src/lib/dropbox.ts`: OAuth 2 PKCE in the browser (no secret), `token_access_type=offline` for a refresh token, stored under a cedric storage key; auto refresh on 401.
-- Owner creates one Dropbox app (App Console, scoped, App folder, permissions files.content.write/read, redirect URI = Pages URL) and pastes the App key into the backup page.
-- Upload `cedric-backup-N.json` to the app folder, list, download for restore; numbering shared with Drive logic.
-- Backup page: Dropbox is the default target; Drive remains for restoring old backups.
-
-## 11. Remaining known issues (not fixed yet)
-- Payment-rule dayBasis ignored (`accounting.ts` ~2822-2845).
-- Tier rate applied flat to all overdue days (needs owner decision).
-- Dashboard balance ignores cash events.
-- Month close (`Home.tsx`): no lock, cards 8 months vs CSV all, month key slice(0,7) (~7611), duplicate closes, CSV not escaped.
-- Cash sync: date-only change not propagated; item/qty change not detected.
-- Delete All deletes before download is confirmed.
-- Drive folder IDs hardcoded (`googleDrive.ts` 27-34).
-- Raw English error on corrupt backup; state saved twice per input.
-
-## 12. Next steps
-1. Owner uploads r5 (see section 2). Check the Actions tab: build + Pages deploy must be green.
-2. Open the site in the second browser; test sub-assembly production, nested reversal, bounced check, batch price update, landscape print (Firefox/Edge), backup/restore.
-3. Cedric delivers r6 (Dropbox) as a zip; owner creates the Dropbox app and enters the App key.
-4. Then work through section 11 with owner decisions.
-
-## 13. Session log
-- 2026-09-27: repo copy created; review; r1-r5 fixes and tests (92/92); Pages confirmed on; direct code commit blocked by connection limits (section 2); this doc committed directly.
+## 8. Next steps
+1. Confirm the Pages deploy of the r6 commit succeeded and the site is no longer white; if the build fails, read the Actions log (patch hash mismatch stops the build on purpose).
+2. Owner creates the Dropbox app (section 7) and tests save / list / restore.
+3. Fix the remaining open bugs in section 5, one commit per group, with tests.
+4. Later: fold patches into whole files when a way to commit large files exists, and remove the patch step.

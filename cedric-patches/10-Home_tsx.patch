@@ -1,0 +1,111 @@
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -8370,19 +8370,19 @@
+       );
+     state.checks
+       .filter(
+-        check => check.partyId === statementPartyId && check.status !== "باطل"
++        // CEDRIC FIX: returned/replaced checks are out of the statement (the replacement is listed);
++        // a bounced check keeps its credit until it is voided or replaced (user rule).
++        check =>
++          check.partyId === statementPartyId &&
++          !["باطل", "عودت داده شده", "جایگزین شده"].includes(check.status)
+       )
+       .forEach(check =>
+         raw.push({
+           id: `statement-check-${check.id}`,
+           date: check.receivedDate || check.dueDate,
+           reference: `چک دریافتی ${check.number}`,
+-          debit: ["برگشتی", "عودت داده شده"].includes(check.status)
+-            ? check.amount
+-            : 0,
+-          credit: ["برگشتی", "عودت داده شده"].includes(check.status)
+-            ? 0
+-            : check.amount,
++          debit: 0,
++          credit: check.amount,
+           note: check.status,
+         })
+       );
+@@ -9175,6 +9175,10 @@
+   const unitPrice = (productId: string, unit: string) => {
+     const product = state.products.find(item => item.id === productId);
+     if (!product) return 0;
++    // CEDRIC FIX (request 2): a production package is priced from its own formula
++    // (latest prices, unit conversion), per base unit.
++    if (state.productionFormulas.some(item => item.outputProductId === productId && item.formulaType === "بسته تولید"))
++      return productCostForFormula(state, productId);
+     const history = state.priceHistory
+       .filter(
+         item =>
+@@ -9360,6 +9364,26 @@
+     });
+   }
+ 
++  // CEDRIC (request 3): add a new price row for part of a batch, at latest prices.
++  function repriceBatch(record: ProductionRecord, batchBase: number, baseUnit: string) {
++    const newUnitCost = repriceProductionRecord(state, record);
++    const current = productionUnitCostAt(record, todayJalali());
++    const answer = window.prompt(
++      `بهای فعلی هر ${baseUnit}: ${formatMoney(current, state.settings.currency)}\nبهای جدید با آخرین قیمت‌ها: ${formatMoney(newUnitCost, state.settings.currency)}\nتعدادی که قیمت جدید می‌گیرد (${baseUnit}):`,
++      String(batchBase || "")
++    );
++    if (answer === null) return;
++    const quantity = quantityValue(answer);
++    if (!(quantity > 0) || (batchBase > 0 && quantity > batchBase)) {
++      window.alert("تعداد معتبر نیست");
++      return;
++    }
++    onSave(
++      addProductionPriceTier(state, record.id, { date: todayJalali(), quantity, unitCost: newUnitCost }),
++      `ردیف قیمت جدید برای بچ ${record.batchNumber || "بدون شماره"} ثبت شد`
++    );
++  }
++
+   function deleteProductionRecord(record: ProductionRecord) {
+     if (!window.confirm(`بچ ${record.batchNumber || "بدون شماره"} حذف و اثر آن از موجودی معکوس شود؟`)) return;
+     try {
+@@ -9408,6 +9432,18 @@
+         todayJalali(),
+         options
+       ).state;
++      // CEDRIC (request 3): editing a batch must not drop its price tiers.
++      const editedRecord = productionDialog.editingRecordId
++        ? state.productionRecords.find(item => item.id === productionDialog.editingRecordId)
++        : undefined;
++      if (editedRecord?.priceTiers?.length) {
++        const baseIds = new Set(baseState.productionRecords.map(item => item.id));
++        next.productionRecords = next.productionRecords.map(item =>
++          baseIds.has(item.id) || item.formulaId !== editedRecord.formulaId
++            ? item
++            : { ...item, priceTiers: editedRecord.priceTiers }
++        );
++      }
+       if (!hasFormula) {
+         next.productionFormulas = next.productionFormulas.filter(
+           formula => formula.id !== productionDialog.formula.id
+@@ -9888,9 +9924,16 @@
+                     {record.pieceWeight ? <span>وزن واقعی: {formatNumber(record.pieceWeight)} {record.pieceWeightUnit || "گرم"}</span> : null}
+                     {record.wastePercent ? <span>پرت: {formatNumber(record.wastePercent)}٪</span> : null}
+                     <span>مواد واقعی: {(record.materialUsage || []).map(usage => `${formatNumber(usage.actualQuantity)} ${usage.unit}`).join("، ") || "ثبت نشده"}</span>
++                    {(record.priceTiers || []).length ? (
++                      <span>
++                        ردیف‌های قیمت: اولیه {formatMoney(record.unitCost, state.settings.currency)}
++                        {(record.priceTiers || []).map(tier => ` · از ${formatDate(tier.date)} برای ${formatNumber(tier.quantity)} ${outputBaseUnit}: ${formatMoney(tier.unitCost, state.settings.currency)}`).join("")}
++                      </span>
++                    ) : null}
+                     <span>توضیح: {record.note || "بدون توضیح"}</span>
+                     <div className="form-actions">
+                       <button type="button" className="text-button" onClick={() => loadProductionRecord(record, displayFormula)}>ویرایش این بچ</button>
++                      <button type="button" className="button button-ghost button-small" onClick={() => repriceBatch(record, outputBaseQuantity, outputBaseUnit)}>بروزرسانی قیمت</button>
+                       <button type="button" className="button button-danger button-small" onClick={() => deleteProductionRecord(record)}>حذف و اصلاح موجودی</button>
+                     </div>
+                   </div>
+@@ -10420,6 +10463,7 @@
+   onDriveRefresh,
+   driveClientId,
+   onDriveConnect,
++  dropbox,
+   snapshotRevision,
+   onRestoreSnapshot,
+   onDeleteSnapshot,

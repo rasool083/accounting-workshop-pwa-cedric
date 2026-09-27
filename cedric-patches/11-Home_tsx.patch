@@ -1,0 +1,110 @@
+--- a/client/src/pages/Home.tsx
++++ b/client/src/pages/Home.tsx
+@@ -10480,6 +10480,17 @@
+   onDriveRefresh: () => void;
+   driveClientId: string;
+   onDriveConnect: (clientId: string) => void;
++  dropbox: {
++    connected: boolean;
++    appKey: string;
++    backups: DriveBackupFile[];
++    loading: boolean;
++    onConnect: (appKey: string) => void;
++    onUpload: () => void;
++    onRefresh: () => void;
++    onRestore: (fileId: string) => void;
++    onDisconnect: () => void;
++  };
+   snapshotRevision: number;
+   onRestoreSnapshot: (snapshot: RestoreSnapshot) => void;
+   onDeleteSnapshot: (snapshot: RestoreSnapshot) => void;
+@@ -10492,6 +10503,7 @@
+     "newest"
+   );
+   const [clientIdDraft, setClientIdDraft] = useState(driveClientId);
++  const [dropboxKeyDraft, setDropboxKeyDraft] = useState(dropbox.appKey);
+   const [snapshots, setSnapshots] = useState<RestoreSnapshot[]>(() =>
+     listRestoreSnapshots()
+   );
+@@ -10695,6 +10707,81 @@
+             </div>
+           )}
+         </div>
++        <div className="panel cloud-panel">
++          <div className="cloud-illustration">
++            <Cloud size={28} />
++          </div>
++          <span className="section-kicker">پشتیبان ابری اصلی</span>
++          <h3>پشتیبان روی Dropbox</h3>
++          <p>
++            یک بار اجازه بدهید؛ بعد از آن دسترسی خودکار تمدید می‌شود. فایل‌ها در
++            پوشهٔ Apps برنامه در Dropbox شما ذخیره می‌شوند.
++          </p>
++          {!dropbox.connected ? (
++            <div className="drive-auth-box">
++              <strong>اتصال این مرورگر</strong>
++              <small>
++                App key برنامهٔ Dropbox را وارد کنید؛ این مقدار رمز نیست.
++              </small>
++              <input
++                value={dropboxKeyDraft}
++                onChange={event => setDropboxKeyDraft(event.target.value)}
++                placeholder="Dropbox App key"
++                dir="ltr"
++              />
++              <button
++                className="button button-primary"
++                onClick={() => dropbox.onConnect(dropboxKeyDraft)}
++                disabled={!dropboxKeyDraft.trim()}
++              >
++                اتصال به Dropbox
++              </button>
++            </div>
++          ) : (
++            <div className="form-actions">
++              <button className="button button-primary" onClick={dropbox.onUpload}>
++                <CloudUpload size={15} /> ذخیره در Dropbox
++              </button>
++              <button
++                className="button button-ghost"
++                onClick={dropbox.onRefresh}
++                disabled={dropbox.loading}
++              >
++                <RefreshCw size={15} className={dropbox.loading ? "spin" : ""} />{" "}
++                {dropbox.loading ? "در حال خواندن" : "تازه‌سازی فهرست"}
++              </button>
++              <button className="button button-ghost" onClick={dropbox.onDisconnect}>
++                قطع اتصال
++              </button>
++            </div>
++          )}
++          {dropbox.connected && (
++            <div className="drive-backup-list">
++              {dropbox.backups.length === 0 && (
++                <small>هنوز نسخه‌ای در Dropbox نیست.</small>
++              )}
++              {dropbox.backups.map(file => (
++                <div className="drive-backup-row" key={file.id}>
++                  <div>
++                    <strong dir="ltr">{file.name}</strong>
++                    <small>
++                      {file.modifiedTime
++                        ? new Date(file.modifiedTime).toLocaleString("fa-IR")
++                        : ""}
++                      {file.size ? ` · ${formatNumber(Number(file.size))} بایت` : ""}
++                    </small>
++                  </div>
++                  <button
++                    className="button button-ghost"
++                    onClick={() => dropbox.onRestore(file.id)}
++                  >
++                    بازیابی
++                  </button>
++                </div>
++              ))}
++            </div>
++          )}
++        </div>
+         <div className="panel cloud-panel">
+           <div className="cloud-illustration">
+             <Cloud size={28} />

@@ -1,0 +1,66 @@
+{
+  "base_commit": "9a534f7",
+  "release": "r6",
+  "files": [
+    {
+      "file": "vite.config.ts",
+      "before": "c301dee2c814f3061beef04fe86bcb9cba99e283466428322ed69e8bd93591ed",
+      "after": "0ac16877507a7504e48fd5470b77c47cee5a833ac1ac4b7d4725d21b6172cdea",
+      "patches": [
+        "cedric-patches/01-vite_config_ts.patch"
+      ]
+    },
+    {
+      "file": "client/src/lib/backup.ts",
+      "before": "f91ac9d25906ac8c580b671c7955aa9bc8950afa4408ab61bab8208eaca8be7d",
+      "after": "3202aa3681226a2e5a010aca02b5d4531d4f9d36fd47bc0d71607677900320a0",
+      "patches": [
+        "cedric-patches/02-backup_ts.patch"
+      ]
+    },
+    {
+      "file": "client/src/lib/googleDrive.ts",
+      "before": "d7c9d72b9fd59f2776e0c337ec02c6df25eff9252315ea1a208f762b701aa021",
+      "after": "89c967c0b76f785421467f0a7ff2379994c19f89f7f7ec70fee4ff55ce119610",
+      "patches": [
+        "cedric-patches/03-googleDrive_ts.patch"
+      ]
+    },
+    {
+      "file": "client/src/lib/vendorDirectory.ts",
+      "before": "31a3c05bfe848afa9ea0d1747fa0d06aba70aa2cf6604a065f59905e46997118",
+      "after": "7329c74d68853d2b26071fbbf302c9978458e1fad5f50d6673f2e072757a52d3",
+      "patches": [
+        "cedric-patches/04-vendorDirectory_ts.patch"
+      ]
+    },
+    {
+      "file": "client/src/lib/accounting.test.ts",
+      "before": "03ff48d2cdf62ec119515d515766a98e7278879dae4f013e41252ceac4b7fc41",
+      "after": "df21bc5c648bfcff9f3c0c13957df77ba35bb1d23ee7dc5c3ca5cfa8d5a17aa5",
+      "patches": [
+        "cedric-patches/05-accounting_test_ts.patch"
+      ]
+    },
+    {
+      "file": "client/src/lib/accounting.ts",
+      "before": "f69aa9b989377f5d6b7293fc07ce9358377e34c7a1d06a715ae0ecd0b085c5bd",
+      "after": "7b47a3b02d2cbfb3ceb3dd6c8c8f5cbfca35bef67d1cc890aee77e07b5e062f4",
+      "patches": [
+        "cedric-patches/06-accounting_ts.patch",
+        "cedric-patches/07-accounting_ts.patch"
+      ]
+    },
+    {
+      "file": "client/src/pages/Home.tsx",
+      "before": "8dd9438c5159d0d0cfd6a73f59f7080a3bcc4e8a3876aa6be4fe340a4fa6f249",
+      "after": "b0ad062098986a027a4db6213562082293c8808179679efbd3dc6594a3b44d19",
+      "patches": [
+        "cedric-patches/08-Home_tsx.patch",
+        "cedric-patches/09-Home_tsx.patch",
+        "cedric-patches/10-Home_tsx.patch",
+        "cedric-patches/11-Home_tsx.patch"
+      ]
+    }
+  ]
+}
